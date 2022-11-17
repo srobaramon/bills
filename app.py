@@ -40,22 +40,34 @@ def calculate_costs(data, main_price, other_price):
     total_month_sum = data['total_call_cost'].sum()
     return data, total_month_sum
 
-st.title('Bill Calculator')
-file = st.file_uploader('Upload Total Bill csv')
-sb = st.sidebar
-sb.subheader('Pricing Setup')
-cols = sb.columns(2)
-t1 = cols[0].time_input('Select Main Range from:', time(8,0))
-main_price = cols[0].number_input('Main Time Price czk',value=1.00)
-t2 = cols[1].time_input('Select Main Range to:', time(16,0))
-other_price = cols[1].number_input('Other Time Price czk', value=0.50)
+@st.cache
+def most_ferquent_caller(data):
+    top_caller = data['caller'].describe().top
+    top_caller = int(float(top_caller))
+    return top_caller
 
-if file:
-    data_raw = read_data(file)
-    data_times = handle_data(data_raw, t1, t2)
-    data_costs, total_month_sum = calculate_costs(data_times, main_price, other_price)
-    st.write(data_costs[['main_time_cost','other_time_cost','total_call_cost']].describe())
-    st.write(f'TOTAL MONTLY COST IS : **{total_month_sum}** czk')
+def frontend():
+    st.title('Bill Calculator')
+    file = st.file_uploader('Upload Total Bill csv')
+    sb = st.sidebar
+    sb.subheader('Pricing Setup')
+    cols = sb.columns(2)
+    t1 = cols[0].time_input('Select Main Range from:', time(8,0))
+    main_price = cols[0].number_input('Main Time Price czk',value=1.00)
+    t2 = cols[1].time_input('Select Main Range to:', time(16,0))
+    other_price = cols[1].number_input('Other Time Price czk', value=0.50)
 
-else:
-    st.warning('Please Upload file')
+    if file:
+        data_raw = read_data(file)
+        data_times = handle_data(data_raw, t1, t2)
+        data_costs, total_month_sum = calculate_costs(data_times, main_price, other_price)
+        top_caller = most_ferquent_caller(data_costs)
+        st.subheader('Summary Table')
+        st.write(data_costs[['main_time_cost','other_time_cost','total_call_cost']].describe())
+        st.write(f'TOTAL MONTLY COST IS : **{total_month_sum}** czk')
+        st.write(f'Most Frequent caller is : **{top_caller}**')
+
+    else:
+        st.warning('Please Upload file')
+
+frontend()
