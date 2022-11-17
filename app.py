@@ -8,8 +8,8 @@ def read_data(file):
     data_raw.columns = ['caller', 'start','end']
     data = data_raw.copy()
     data['caller'] = data['caller'].astype(str)
-    data['start'] = pd.to_datetime(data['start'], format='%m/%d/%Y %H:%M')
-    data['end'] = pd.to_datetime(data['end'], format='%m/%d/%Y %H:%M')
+    data['start'] = pd.to_datetime(data['start'], format='%Y-%m-%d %H:%M:%S')
+    data['end'] = pd.to_datetime(data['end'], format='%Y-%m-%d %H:%M:%S')
     return data
 
 @st.cache   
@@ -37,7 +37,7 @@ def calculate_costs(data, main_price, other_price):
     data['main_time_cost'] = data['main_time'].apply(lambda x: x.seconds/60*main_price)
     data['other_time_cost'] = data['other_time'].apply(lambda x: x.seconds/60*other_price)
     data['total_call_cost'] = data['main_time_cost'] + data['other_time_cost']
-    total_month_sum = data['total_call_cost'].sum()
+    total_month_sum = round(data['total_call_cost'].sum(), 2)
     return data, total_month_sum
 
 @st.cache
