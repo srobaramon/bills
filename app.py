@@ -25,22 +25,18 @@ def calculate_minutes(data, time_from, time_to, bonus_rate_min):
     #IF BOTH IN MAIN TIME
     data.loc[(data['start_in_main']==True) & (data['end_in_main']==True), 'main_time'] = data['end'] - data['start']
     data.loc[(data['start_in_main']==True) & (data['end_in_main']==True), 'other_time'] = timedelta(0)
-    # data.loc[(data['start_in_main']==True) & (data['end_in_main']==True), 'bonus_rate'] = 'Case 1'
 
     #IF BOTH NOT IN MAIN TIME
     data.loc[(data['start_in_main']==False) & (data['end_in_main']==False), 'main_time'] = timedelta(0) 
     data.loc[(data['start_in_main']==False) & (data['end_in_main']==False), 'other_time'] = data['end']-data['start']
-    # data.loc[(data['start_in_main']==False) & (data['end_in_main']==False), 'bonus_rate'] = 'Case 2'
 
     #IF START IN MAIN TIME AND END OTHER TIME
     data.loc[(data['start_in_main']==True) & (data['end_in_main']==False), 'main_time'] = data['main_to']-data['start']
     data.loc[(data['start_in_main']==True) & (data['end_in_main']==False), 'other_time'] = data['end']-data['main_to']
-    # data.loc[(data['start_in_main']==True) & (data['end_in_main']==False), 'bonus_rate'] = 'Case 3'
 
     #IF START IN OTHER TIME AND END IN MAIN TIME
     data.loc[(data['start_in_main']==False) & (data['end_in_main']==True), 'main_time'] = data['end']-data['main_from']
     data.loc[(data['start_in_main']==False) & (data['end_in_main']==True), 'other_time'] = data['main_from']-data['start']
-    # data.loc[(data['start_in_main']==False) & (data['end_in_main']==True), 'bonus_rate'] = 'Case 4'
 
     data['total_time'] = data['end'] - data['start']
     # CONVERT TO SECONDS
@@ -63,7 +59,6 @@ def get_bonus_rate(data, main_price, other_price, bonus_rate_min=300, bonus_rate
 def calculate_costs(data, main_price, other_price, top_caller):
     data['main_time_cost'] = data['main_time_seconds'].apply(lambda x: x/60*main_price)
     data['other_time_cost'] = data['other_time_seconds'].apply(lambda x: x/60*other_price)
-    # data['bonus_time_cost'] = data['other_time_seconds'].apply(lambda x: x/60*bonus_price)
     # Set Frequent Caller price to zero 
     data.loc[data['caller']==top_caller, 'main_time_cost'] = 0
     data.loc[data['caller']==top_caller, 'other_time_cost'] = 0
