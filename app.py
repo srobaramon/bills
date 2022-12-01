@@ -5,7 +5,7 @@ from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 from st_aggrid.shared import GridUpdateMode
 from streamlit_pandas_profiling import st_profile_report
 from pandas_profiling import ProfileReport
-
+MODE = st.set_page_config(page_title="Bill Calculator", layout="wide")
 def aggrid_interactive_table(df: pd.DataFrame):
     """Creates an st-aggrid interactive table based on a dataframe.
 
@@ -50,7 +50,7 @@ def read_data(file):
     return data
 
 @st.cache   
-def calculate_minutes(data, time_from, time_to, bonus_rate_min):
+def calculate_minutes(data, time_from, time_to, bonus_rate_sec):
     data['main_from'] = data['start'].apply(lambda x: datetime.combine(x.date(), time_from))
     data['main_to'] = data['start'].apply(lambda x: datetime.combine(x.date(), time_to))
     data['start_in_main'] = (data['main_from']<data['start']) & (data['main_to']>data['start'])
@@ -77,15 +77,15 @@ def calculate_minutes(data, time_from, time_to, bonus_rate_min):
     data['main_time_seconds'] = data['main_time'].apply(lambda x: x.seconds)
     data['other_time_seconds'] = data['other_time'].apply(lambda x: x.seconds)
     data['total_time_seconds'] = data['total_time'].apply(lambda x: x.seconds)
-    data['bonus_time_seconds'] = data['total_time_seconds'] - bonus_rate_min
+    data['bonus_time_seconds'] = data['total_time_seconds'] - bonus_rate_sec
     return data
 
 
-def get_bonus_rate(data, main_price, other_price, bonus_rate_min=300, bonus_rate_price=0.2):
+def get_bonus_rate(data, main_price, other_price, bonus_rate_sec=300, bonus_rate_price=0.2):
     # CASE1 Main time <5min
-    data.loc[(data['total_time_seconds']>bonus_rate_min) & (data['main_time_seconds']>bonus_rate_min), 'total_call_cost'] = ((data['main_time_seconds']-bonus_rate_min)/60)*main_price + (data['bonus_time_seconds']/60)*bonus_rate_price
+    data.loc[(data['total_time_seconds']>bonus_rate_sec) & (data['main_time_seconds']>bonus_rate_sec), 'total_call_cost'] = ((data['main_time_seconds']-bonus_rate_sec)/60)*main_price + (data['bonus_time_seconds']/60)*bonus_rate_price
     # CASE2 Main time >5min
-    data.loc[(data['total_time_seconds']>bonus_rate_min) & (data['main_time_seconds']<bonus_rate_min), 'total_call_cost'] = (data['main_time_seconds']/60)*main_price + ((bonus_rate_min-data['main_time_seconds'])/60)*other_price + (data['bonus_time_seconds']/60)*bonus_rate_price
+    data.loc[(data['total_time_seconds']>bonus_rate_sec) & (data['main_time_seconds']<bonus_rate_sec), 'total_call_cost'] = (data['main_time_seconds']/60)*main_price + ((bonus_rate_sec-data['main_time_seconds'])/60)*other_price + (data['bonus_time_seconds']/60)*bonus_rate_price
     total_month_sum = round(data['total_call_cost'].sum(), 2)
     return data, total_month_sum
 
@@ -116,13 +116,16 @@ def frontend():
     main_price = cols[0].number_input('Main Time Price czk',value=1.00)
     time_to = cols[1].time_input('Select Main Range to:', time(16,0))
     other_price = cols[1].number_input('Other Time Price czk', value=0.50)
+    bonus_rate_min = cols[0].number_input('Bonus minutes', value=5)
+    bonus_rate_sec = bonus_rate_min*60
+    bonus_rate_price = cols[1].number_input('Bonus minutes Price czk', value=0.20)
 
     if file:
         data_raw = read_data(file)
-        data_times = calculate_minutes(data_raw, time_from, time_to, bonus_rate_min=300)
+        data_times = calculate_minutes(data_raw, time_from, time_to, bonus_rate_sec=300)
         top_caller = most_ferquent_caller(data_raw)
         data_costs, data_all = calculate_costs(data_times, main_price, other_price, top_caller)
-        data_costs_with_bonus, total_month_sum = get_bonus_rate(data_all,main_price,other_price)
+        data_costs_with_bonus, total_month_sum = get_bonus_rate(data_all,main_price,other_price,bonus_rate_sec, bonus_rate_price)
         st.subheader('Summary Table')
         st.write(data_costs[['main_time_cost','other_time_cost','total_call_cost']].describe())
         st.write(f'TOTAL MONTLY COST IS : **{total_month_sum}** czk')
