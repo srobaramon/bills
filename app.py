@@ -1,110 +1,78 @@
-import pandas as pd
-from datetime import datetime, date, timedelta, time
 import streamlit as st
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
-from st_aggrid.shared import GridUpdateMode
-from streamlit_pandas_profiling import st_profile_report
-from pandas_profiling import ProfileReport
-MODE = st.set_page_config(page_title="Bill Calculator", layout="wide")
-def aggrid_interactive_table(df: pd.DataFrame):
-    """Creates an st-aggrid interactive table based on a dataframe.
+import pandas as pd
+import plotly.express as px
+from datetime import datetime, date, timedelta, time
+MODE = st.set_page_config(page_title="BillCalculator",layout="wide")
+class Call:
+    def __init__(self, caller, start, end, main_time_from=time(8,0), main_time_to=time(16,0), bonus_minutes=5):
+        self.caller = caller
+        self.start = start
+        self.end = end
+        self.duration_m = self.get_duration_m()
+        self.main_min, self.other_min, self.bonus_min = self.get_sorted_minutes(main_time_from, main_time_to, bonus_minutes)
 
-    Args:
-        df (pd.DataFrame]): Source dataframe
-
-    Returns:
-        dict: The selected row
-    """
-
-    options = GridOptionsBuilder.from_dataframe(
-        df, enableRowGroup=True, enableValue=True, enablePivot=True
-    )
-
-    options.configure_side_bar()
-
-    options.configure_selection("multiple", use_checkbox=True, header_checkbox=True)
-    options.configure_pagination(enabled=True, paginationAutoPageSize=True)
-    selection = AgGrid(
-        df,
-        enable_enterprise_modules=True,
-        gridOptions=options.build(),
-        update_mode=GridUpdateMode.MODEL_CHANGED,
-        data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-        fit_columns_on_grid_load=False,
-        header_checkbox_selection_filtered_only=True,
-        allow_unsafe_jscode=True,
-        use_checkbox=True,
-        height=500,
-    )
-
-    return selection
-
-@st.cache(allow_output_mutation=True)
-def read_data(file):
-    data_raw = pd.read_csv(file, header=None)
-    data_raw.columns = ['caller', 'start','end']
-    data = data_raw.copy()
-    data['caller'] = data['caller'].astype(str)
-    data['start'] = pd.to_datetime(data['start'], format='%Y-%m-%d %H:%M:%S')
-    data['end'] = pd.to_datetime(data['end'], format='%Y-%m-%d %H:%M:%S')
-    return data
-
-@st.cache   
-def calculate_minutes(data, time_from, time_to, bonus_rate_sec):
-    data['main_from'] = data['start'].apply(lambda x: datetime.combine(x.date(), time_from))
-    data['main_to'] = data['start'].apply(lambda x: datetime.combine(x.date(), time_to))
-    data['start_in_main'] = (data['main_from']<data['start']) & (data['main_to']>data['start'])
-    data['end_in_main'] = (data['main_from']<data['end']) & (data['main_to']>data['end'])
-
-    #IF BOTH IN MAIN TIME
-    data.loc[(data['start_in_main']==True) & (data['end_in_main']==True), 'main_time'] = data['end'] - data['start']
-    data.loc[(data['start_in_main']==True) & (data['end_in_main']==True), 'other_time'] = timedelta(0)
-
-    #IF BOTH NOT IN MAIN TIME
-    data.loc[(data['start_in_main']==False) & (data['end_in_main']==False), 'main_time'] = timedelta(0) 
-    data.loc[(data['start_in_main']==False) & (data['end_in_main']==False), 'other_time'] = data['end']-data['start']
-
-    #IF START IN MAIN TIME AND END OTHER TIME
-    data.loc[(data['start_in_main']==True) & (data['end_in_main']==False), 'main_time'] = data['main_to']-data['start']
-    data.loc[(data['start_in_main']==True) & (data['end_in_main']==False), 'other_time'] = data['end']-data['main_to']
-
-    #IF START IN OTHER TIME AND END IN MAIN TIME
-    data.loc[(data['start_in_main']==False) & (data['end_in_main']==True), 'main_time'] = data['end']-data['main_from']
-    data.loc[(data['start_in_main']==False) & (data['end_in_main']==True), 'other_time'] = data['main_from']-data['start']
-
-    data['total_time'] = data['end'] - data['start']
-    # CONVERT TO SECONDS
-    data['main_time_seconds'] = data['main_time'].apply(lambda x: x.seconds)
-    data['other_time_seconds'] = data['other_time'].apply(lambda x: x.seconds)
-    data['total_time_seconds'] = data['total_time'].apply(lambda x: x.seconds)
-    data['bonus_time_seconds'] = data['total_time_seconds'] - bonus_rate_sec
-    return data
+    def get_duration_m(self):
+        duration = self.end - self.start
+        duration_m = -(-duration.seconds//60)
+        return duration_m
+    
+    def get_sorted_minutes(self, main_time_from, main_time_to, bonus_minutes):
+        main_min, other_min, bonus_min = 0,0,0
+        minute_start = self.start
+        actual_date = minute_start.date()
+        main_from = datetime.combine(actual_date, main_time_from)
+        main_to = datetime.combine(actual_date, main_time_to)
+        for i in range(1, self.duration_m+1):
+            # CALLS UNDER BONUS RATE MIN
+            if i<=bonus_minutes: 
+                if minute_start>=main_from and minute_start<main_to:
+                    main_min +=1
+                else:
+                    other_min +=1
+            # CALLS ABOVE BONUS RATE MIN
+            else:
+                bonus_min+=1
+            # Another minute starts
+            minute_start+=timedelta(minutes=1)
+        return main_min, other_min, bonus_min
 
 
-def get_bonus_rate(data, main_price, other_price, bonus_rate_sec=300, bonus_rate_price=0.2):
-    # CASE1 Main time <5min
-    data.loc[(data['total_time_seconds']>bonus_rate_sec) & (data['main_time_seconds']>bonus_rate_sec), 'total_call_cost'] = ((data['main_time_seconds']-bonus_rate_sec)/60)*main_price + (data['bonus_time_seconds']/60)*bonus_rate_price
-    # CASE2 Main time >5min
-    data.loc[(data['total_time_seconds']>bonus_rate_sec) & (data['main_time_seconds']<bonus_rate_sec), 'total_call_cost'] = (data['main_time_seconds']/60)*main_price + ((bonus_rate_sec-data['main_time_seconds'])/60)*other_price + (data['bonus_time_seconds']/60)*bonus_rate_price
-    total_month_sum = round(data['total_call_cost'].sum(), 2)
-    return data, total_month_sum
+class Bill:
+    def __init__(self, file, main_cost=1, other_cost=0.5, bonus_cost=0.2, main_time_from=8, main_time_to=16, bonus_minutes=5):
+        data = self.read_bill(file)
+        self.top_caller = data['caller'].describe().top
+        self.data_full = self.get_full_data(data, main_cost, other_cost, bonus_cost, main_time_from, main_time_to, bonus_minutes)
+        self.total_month_sum = self.get_total_sum(self.data_full)
 
-# @st.cache(allow_output_mutation=True)
-def calculate_costs(data, main_price, other_price, top_caller):
-    data['main_time_cost'] = data['main_time_seconds'].apply(lambda x: x/60*main_price)
-    data['other_time_cost'] = data['other_time_seconds'].apply(lambda x: x/60*other_price)
-    # Set Frequent Caller price to zero 
-    data.loc[data['caller']==top_caller, 'main_time_cost'] = 0
-    data.loc[data['caller']==top_caller, 'other_time_cost'] = 0
-    data['total_call_cost'] = data['main_time_cost'] + data['other_time_cost']
-    data_all = data.copy()
-    data_all.drop(['main_time','other_time', 'total_time'], axis=1, inplace=True)
-    return data, data_all
+    def read_bill(self, file):
+        data_raw = pd.read_csv(file, header=None)
+        data_raw.columns = ['caller', 'start','end']
+        data = data_raw.iloc[:,:3]
+        data['caller'] = data['caller'].astype(str)
+        data['start'] = pd.to_datetime(data['start'], format='%Y-%m-%d %H:%M:%S')
+        data['end'] = pd.to_datetime(data['end'], format='%Y-%m-%d %H:%M:%S')
+        return data
 
-@st.cache
-def most_ferquent_caller(data):
-    top_caller = data['caller'].describe().top
-    return top_caller
+    def get_full_data(self, data, main_cost, other_cost, bonus_cost, main_time_from, main_time_to, bonus_minutes):
+        data['Calls'] = [Call(row.caller, row.start, row.end, main_time_from, main_time_to, bonus_minutes) for row in data.itertuples()]
+        data['main_min'] = data['Calls'].apply(lambda x: x.main_min)
+        data['other_min'] = data['Calls'].apply(lambda x: x.other_min)
+        data['bonus_min'] = data['Calls'].apply(lambda x: x.bonus_min)
+        data['total_min'] = data[['main_min','other_min','bonus_min']].sum(axis=1)
+        data['main_min_cost'] = data['main_min']*main_cost
+        data['other_min_cost'] = data['other_min']*other_cost
+        data['bonus_min_cost'] = data['bonus_min']*bonus_cost
+        data['total_cost'] = data[['main_min_cost','other_min_cost','bonus_min_cost']].sum(axis=1)
+        # Apply most frequent caller
+        data.loc[data['caller']==self.top_caller, 'total_cost'] = 0
+        print(f'Most Frequent caller is : **{self.top_caller}**')
+        data_full = data.copy()
+        return data_full
+
+    def get_total_sum(self, data_full):
+        total_month_sum = round(data_full['total_cost'].sum(), 2)
+        print(f'TOTAL MONTLY COST IS : **{total_month_sum}** czk')
+        return total_month_sum
 
 def frontend():
     st.title('Bill Calculator')
@@ -117,26 +85,27 @@ def frontend():
     time_to = cols[1].time_input('Select Main Range to:', time(16,0))
     other_price = cols[1].number_input('Other Time Price czk', value=0.50)
     bonus_rate_min = cols[0].number_input('Bonus minutes', value=5)
-    bonus_rate_sec = bonus_rate_min*60
     bonus_rate_price = cols[1].number_input('Bonus minutes Price czk', value=0.20)
-
     if file:
-        data_raw = read_data(file)
-        data_times = calculate_minutes(data_raw, time_from, time_to, bonus_rate_sec=300)
-        top_caller = most_ferquent_caller(data_raw)
-        data_costs, data_all = calculate_costs(data_times, main_price, other_price, top_caller)
-        data_costs_with_bonus, total_month_sum = get_bonus_rate(data_all,main_price,other_price,bonus_rate_sec, bonus_rate_price)
-        st.subheader('Summary Table')
-        st.write(data_costs[['main_time_cost','other_time_cost','total_call_cost']].describe())
-        st.write(f'TOTAL MONTLY COST IS : **{total_month_sum}** czk')
-        st.write(f'Most Frequent caller is : **{top_caller}**')
-        response = aggrid_interactive_table(data_costs_with_bonus)
-        st.dataframe(response['selected_rows'])
-
-        if st.button('Run Analysis'):
-            profile = ProfileReport(response.data)
-            st_profile_report(profile)
-    else:
-        st.warning('Please Upload file')
+        bill = Bill(file,
+                main_cost=main_price,
+                other_cost=other_price, 
+                bonus_cost=bonus_rate_price, 
+                main_time_from=time_from, 
+                main_time_to=time_to, 
+                bonus_minutes=bonus_rate_min
+            )
+        st.subheader(f'TOTAL MONTLY COST IS : **{bill.total_month_sum}** czk')
+        st.subheader(f'Most Frequent caller is : **{bill.top_caller}**')
+        st.dataframe(bill.data_full)
+        fig = px.bar(bill.data_full, x="caller", y=["main_min_cost", "other_min_cost", "bonus_min_cost"], title="Cost Distribution")
+        st.plotly_chart(fig)
 
 frontend()
+# '''
+# # EXAMPLE
+# bill1 = Bill(r'example_file\0-1672928432193.csv')
+# bill2 = Bill(r'example_file\0-1672928469157.csv')
+# bill3 = Bill(r'example_file\0-1672928469157.csv', main_cost=1.5, other_cost=0.75, bonus_cost=0.25, main_time_from=9, main_time_to=14, bonus_minutes=3)
+# '''
+
